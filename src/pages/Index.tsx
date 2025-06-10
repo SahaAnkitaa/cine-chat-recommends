@@ -1,23 +1,75 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Star, Bot, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import MovieCard from '@/components/MovieCard';
-import { mockMovies } from '@/data/mockMovies';
+import ApiKeyNotice from '@/components/ApiKeyNotice';
+import { tmdbService, Movie } from '@/services/tmdbService';
 
 const Index = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('all');
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchResults, setSearchResults] = useState<Movie[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const genres = ['all', 'action', 'comedy', 'drama', 'horror', 'sci-fi', 'romance'];
 
-  const filteredMovies = mockMovies.filter(movie => {
-    const matchesSearch = movie.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesGenre = selectedGenre === 'all' || movie.genre.toLowerCase() === selectedGenre;
-    return matchesSearch && matchesGenre;
-  });
+  // Load popular movies on component mount
+  useEffect(() => {
+    const loadPopularMovies = async () => {
+      setLoading(true);
+      const popularMovies = await tmdbService.getPopularMovies();
+      setMovies(popularMovies);
+      setLoading(false);
+    };
+
+    loadPopularMovies();
+  }, []);
+
+  // Handle search
+  useEffect(() => {
+    const searchMovies = async () => {
+      if (searchTerm.trim()) {
+        setIsSearching(true);
+        const results = await tmdbService.searchMovies(searchTerm);
+        setSearchResults(results);
+        setIsSearching(false);
+      } else {
+        setSearchResults([]);
+      }
+    };
+
+    const timeoutId = setTimeout(searchMovies, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
+
+  // Handle genre filtering
+  useEffect(() => {
+    const loadMoviesByGenre = async () => {
+      if (selectedGenre !== 'all') {
+        setLoading(true);
+        const genreId = tmdbService.getGenreIdByName(selectedGenre);
+        if (genreId) {
+          const genreMovies = await tmdbService.getMoviesByGenre(genreId);
+          setMovies(genreMovies);
+        }
+        setLoading(false);
+      } else if (!searchTerm) {
+        setLoading(true);
+        const popularMovies = await tmdbService.getPopularMovies();
+        setMovies(popularMovies);
+        setLoading(false);
+      }
+    };
+
+    loadMoviesByGenre();
+  }, [selectedGenre]);
+
+  const displayedMovies = searchTerm ? searchResults : movies;
+  const isLoadingMovies = loading || isSearching;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -47,15 +99,14 @@ const Index = () => {
       {/* Hero Section */}
       <section className="py-20 text-center">
         <div className="container mx-auto px-4">
+          <ApiKeyNotice />
+          
           <h2 className="text-5xl font-bold text-white mb-6">
             Discover Your Next
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
               {" "}Favorite Movie
             </span>
           </h2>
-          <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
-            Explore thousands of movies, get personalized recommendations, and chat with our AI bot for the perfect movie night.
-          </p>
           
           {/* Search and Filters */}
           <div className="max-w-4xl mx-auto space-y-4">
@@ -94,18 +145,35 @@ const Index = () => {
       <section className="py-12">
         <div className="container mx-auto px-4">
           <h3 className="text-3xl font-bold text-white mb-8">
-            {searchTerm ? 'Search Results' : selectedGenre === 'all' ? 'Trending Movies' : `${selectedGenre.charAt(0).toUpperCase() + selectedGenre.slice(1)} Movies`}
+            {searchTerm ? 'Search Results' : selectedGenre === 'all' ? 'Popular Movies' : `${selectedGenre.charAt(0).toUpperCase() + selectedGenre.slice(1)} Movies`}
           </h3>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredMovies.map((movie) => (
-              <MovieCard key={movie.id} movie={movie} />
-            ))}
-          </div>
+          {isLoadingMovies ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {[...Array(8)].map((_, index) => (
+                <div key={index} className="bg-black/30 border border-white/10 rounded-lg animate-pulse">
+                  <div className="h-64 bg-gray-700 rounded-t-lg"></div>
+                  <div className="p-4 space-y-2">
+                    <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+                    <div className="h-3 bg-gray-700 rounded w-1/2"></div>
+                    <div className="h-3 bg-gray-700 rounded w-full"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {displayedMovies.map((movie) => (
+                <MovieCard key={movie.id} movie={movie} />
+              ))}
+            </div>
+          )}
           
-          {filteredMovies.length === 0 && (
+          {!isLoadingMovies && displayedMovies.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-gray-400 text-lg">No movies found. Try adjusting your search or filters.</p>
+              <p className="text-gray-400 text-lg">
+                {searchTerm ? 'No movies found. Try a different search term.' : 'No movies found. Try adjusting your filters.'}
+              </p>
             </div>
           )}
         </div>
